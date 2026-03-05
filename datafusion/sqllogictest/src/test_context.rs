@@ -52,7 +52,8 @@ use crate::is_spark_path;
 use async_trait::async_trait;
 use datafusion::common::cast::as_float64_array;
 use datafusion::execution::SessionStateBuilder;
-use datafusion::execution::runtime_env::RuntimeEnv;
+use datafusion::execution::memory_pool::FairSpillPool;
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use log::info;
 use tempfile::TempDir;
 
@@ -81,7 +82,18 @@ impl TestContext {
         let config = SessionConfig::new()
             // hardcode target partitions so plans are deterministic
             .with_target_partitions(4);
-        let runtime = Arc::new(RuntimeEnv::default());
+
+        let file_name = relative_path.file_name().unwrap().to_str().unwrap();
+
+        let runtime = match file_name {
+            "aggregation_duplicates.slt" => {
+                RuntimeEnvBuilder::new()
+                    .with_memory_pool(Arc::new(FairSpillPool::new(200 * 1024 * 1024)))
+                    .build_arc()
+                    .unwrap()
+            }
+            _ => RuntimeEnvBuilder::new().build_arc().unwrap(),
+        };
 
         let mut state_builder = SessionStateBuilder::new()
             .with_config(config)
@@ -96,7 +108,6 @@ impl TestContext {
 
         let mut test_ctx = TestContext::new(SessionContext::new_with_state(state));
 
-        let file_name = relative_path.file_name().unwrap().to_str().unwrap();
         match file_name {
             "cte_quoted_reference.slt" => {
                 info!("Registering strict catalog provider for CTE tests");
