@@ -1267,6 +1267,14 @@ impl GroupedHashAggregateStream {
             // on the grouping columns.
             self.group_ordering = GroupOrdering::Full(GroupOrderingFull::new());
 
+            // Recreate group_values to use streaming mode (scalarized_intern) which preserves input
+            // row order, as required by GroupOrderingFull.
+            let group_schema = self
+                .spill_state
+                .merging_group_by
+                .group_schema(&self.spill_state.spill_schema)?;
+            self.group_values = new_group_values(group_schema, &self.group_ordering)?;
+
             // Use `OutOfMemoryMode::ReportError` from this point on
             // to ensure we don't spill the spilled data to disk again.
             self.oom_mode = OutOfMemoryMode::ReportError;
