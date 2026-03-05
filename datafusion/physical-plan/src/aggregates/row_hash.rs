@@ -1088,6 +1088,15 @@ impl GroupedHashAggregateStream {
             .build()?;
         self.input_done = false;
         self.group_ordering = GroupOrdering::Full(GroupOrderingFull::new());
+
+        // Recreate group_values to use streaming mode (scalarized_intern)
+        // which preserves input row order — required by GroupOrderingFull.
+        let group_schema = self
+            .spill_state
+            .merging_group_by
+            .group_schema(&self.spill_state.spill_schema)?;
+        self.group_values = new_group_values(group_schema, &self.group_ordering)?;
+
         Ok(())
     }
 
