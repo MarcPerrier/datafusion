@@ -1358,7 +1358,18 @@ fn build_is_null_column_expr(
 
 /// The maximum number of entries in an `InList` that might be rewritten into
 /// an OR chain
-const MAX_LIST_VALUE_SIZE_REWRITE: usize = 20;
+///
+/// Defaults to 20, overridable via the `PIGMENT_DATAFUSION_PRUNING_IN_LIST_MAX_SIZE`
+/// env var.
+fn max_list_value_size_rewrite() -> usize {
+    static VALUE: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *VALUE.get_or_init(|| {
+        std::env::var("PIGMENT_DATAFUSION_PRUNING_IN_LIST_MAX_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20)
+    })
+}
 
 /// Rewrite a predicate expression in terms of statistics (min/max/null_counts)
 /// for use as a [`PruningPredicate`].
@@ -1462,7 +1473,7 @@ fn build_predicate_expression(
     }
     if let Some(in_list) = expr_any.downcast_ref::<phys_expr::InListExpr>() {
         if !in_list.list().is_empty()
-            && in_list.list().len() <= MAX_LIST_VALUE_SIZE_REWRITE
+            && in_list.list().len() <= max_list_value_size_rewrite()
         {
             let eq_op = if in_list.negated() {
                 Operator::NotEq
