@@ -774,6 +774,36 @@ impl AggregateExec {
         let (new_sort_exprs, indices) =
             input_eq_properties.find_longest_permutation(&groupby_exprs)?;
 
+        // ########################
+        // #  BEGINNING OF PATCH  #
+        // ########################
+        //
+        // Constant group-by columns (e.g. from a pushed-down `col = literal` scope predicate) are
+        // reported as trivially "ordered", but their sort boundary never advances at runtime.
+        // GroupOrderingPartial then can never emit under memory pressure (EmitEarly clamps to the
+        // boundary, see apache/datafusion#20445) and the skip-aggregation probe is disabled.
+        // Constant columns provide no grouping benefit, so drop them before deciding the input
+        // order mode.
+        //
+        // NOTE: This is fine for our needs, but will most likely cause Datafusion tests to break.
+        //
+        // NOTE2: This issue will disappear as we upgrade to more recent Datafusion versions (as
+        // aggregators are being re-written)
+
+        let (new_sort_exprs, indices): (Vec<_>, Vec<_>) = new_sort_exprs
+            .into_iter()
+            .zip(indices)
+            .filter(|(_, idx)| {
+                input_eq_properties
+                    .is_expr_constant(&groupby_exprs[*idx])
+                    .is_none()
+            })
+            .unzip();
+
+        // ########################
+        // #     END OF PATCH     #
+        // ########################
+
         let mut new_requirements = new_sort_exprs
             .into_iter()
             .map(PhysicalSortRequirement::from)
